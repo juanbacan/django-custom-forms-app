@@ -192,13 +192,13 @@ class EncuestaAdminView(ViewAdministracionBase):
     
     def get_add(self, request, context, *args, **kwargs):
         context['form'] = EncuestaForm()
-        return render(request, 'forms/formAdmin.html', context)
+        return render(request, 'core/forms/formAdmin.html', context)
     
     def get_edit(self, request, context, *args, **kwargs):
         object = Encuesta.objects.get(pk=self.data.get('id', None))
         context['form'] = EncuestaForm(instance=object)
         context['object'] = object
-        return render(request, 'forms/formAdmin.html', context)
+        return render(request, 'core/forms/formAdmin.html', context)
     
     def get_responder_encuesta(self, request, context, *args, **kwargs):
         context['encuesta'] = encuesta = Encuesta.objects.get(pk=self.data.get('id', None))
