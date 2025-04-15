@@ -1,0 +1,47 @@
+{% extends 'layout/base_admin.html' %}
+{% load core_extras %}
+{% load static %}
+
+{% block extrajs %}
+    <script src="https://cdn.jsdelivr.net/npm/formiojs@latest/dist/formio.full.min.js"></script>
+    <script>
+        const schema = JSON.parse(document.getElementById('schema-preview').textContent);
+        Formio.createForm(document.getElementById('form-preview'), schema);
+    </script>
+{% endblock %}
+
+{% block extracss %}
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/formiojs@latest/dist/formio.full.min.css">
+
+    <style>
+        .divisor {
+            border-top: 4px solid;
+            color: #0d6efd;
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+    <div class="row">
+        <div class="col-md-12">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'administracion' %}{{ modulo_activo.url }}">{{ modulo_activo.nombre }}</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'administracion' %}{{ modulo_activo.url }}">{{ object }}</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'administracion' %}{{ modulo_activo.url }}?action=versiones&id={{ object.formulario.id }}">Versiones</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">v.{{ object.numero }}</li>
+                </ol>
+            </nav>
+
+            <div class="card border-0">
+                <div class="card-body">
+                    <div id="form-preview"></div>
+                    {{ object.json|json_script:"schema-preview" }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+
+{% endblock %}

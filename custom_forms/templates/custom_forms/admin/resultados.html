@@ -1,0 +1,79 @@
+{% extends 'layout/base_admin.html' %}
+{% load core_extras %}
+{% load static %}
+
+{% block extrajs %}
+{% endblock %}
+
+{% block extracss %}
+    <style>
+    </style>
+{% endblock %}
+
+{% block content %}
+
+	<div class="row">
+		<div class="col-md-12">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'administracion' %}{{ modulo_activo.url }}">{{ modulo_activo.nombre }}</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'administracion' %}{{ modulo_activo.url }}">{{ object.nombre }}</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Resultados</li>
+                </ol>
+            </nav>
+
+            <div class="card border-0 table-responsive">
+                <div class="card-body mb-5">
+                    <table class="table small table-hover table-striped">
+                        <thead>
+                            <tr>
+                                <th>Usuario</th>
+                                <th>Fecha</th>
+                                {% if resultados %}
+                                    {% for clave in resultados.0.campos.keys %}
+                                        <th>{{ clave|capfirst }}</th>
+                                    {% endfor %}
+                                {% endif %}
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for fila in resultados %}
+                                <tr>
+                                    <td></td>
+                                    <td>{{ fila.fecha|date:"Y-m-d H:i" }}</td>
+                                    {% for valor in fila.campos.values %}
+                                        <td>{{ valor }}</td>
+                                    {% endfor %}
+                                    <td>
+                                        <div class="dropdown">
+                                            <button class="btn btn-info btn-xs dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                                Acciones
+                                            </button>
+                                            <ul class="dropdown-menu">
+                                                <li>
+                                                    <a class="dropdown-item btn" href="{{ path }}?action=ver_resultado&id={{ fila.id }}">
+                                                        <i class="fa-solid fa-eye"></i> Ver Resultado
+                                                    </a>
+                                                </li>
+                                                <li>
+                                                    <a class="dropdown-item btn" href="{{ path }}?action=edit_resultado&id={{ fila.id }}">
+                                                        <i class="fa-solid fa-pencil"></i> Editar Resultado
+                                                    </a>
+                                                </li>
+                                                <li>
+                                                    <li><a class="dropdown-item formmodal" href="javascript:" nhref="{{ request.path }}?action=delete_resultado&id={{ fila.id }}"><i class="fa-solid fa-trash"></i> Eliminar</a></li>
+                                                </li>
+                                            </ul>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+		</div>
+	</div>
+
+{% endblock %}

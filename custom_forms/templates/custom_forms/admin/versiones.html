@@ -1,0 +1,70 @@
+{% extends 'layout/base_admin.html' %}
+{% load core_extras %}
+{% load static %}
+
+{% block extrajs %}
+{% endblock %}
+
+{% block extracss %}
+    <style>
+    </style>
+{% endblock %}
+
+{% block content %}
+
+	<div class="row">
+		<div class="col-md-12">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'administracion' %}{{ modulo_activo.url }}">{{ modulo_activo.nombre }}</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'administracion' %}{{ modulo_activo.url }}">{{ object }}</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Versiones</li>
+                </ol>
+            </nav>
+
+            {% comment %} <div class="d-flex flex-wrap gap-3 justify-content-between align-items-center mb-4">
+                <div>
+                    <h1 class="mb-0 h3"><i class="{{ modulo_activo.icon }}"></i> Versiones Formulario: {{ object }}</h1>
+                </div>
+            </div> {% endcomment %}
+
+            <div class="card border-0 table-responsive">
+                <div class="card-body mb-5">
+                    <table class="table small table-hover table-striped">
+                        <thead>
+                            <tr>
+                                <th>Nombre</th>
+                                <th>Versión</th>
+                                <th>Fecha Creación</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for object in versiones %}
+                                <tr>
+                                    <td>{{ object.formulario.nombre }}</td>
+                                    <td>{{ object.numero }}</td>
+                                    <td>{{ object.creado_en }}</td>
+                                    <td>
+                                        <div class="dropdown">
+                                            <button class="btn btn-info btn-xs dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                                Acciones
+                                            </button>
+                                            <ul class="dropdown-menu">
+                                                <li>
+                                                    <a class="dropdown-item btn" href="{{ path }}?action=ver_version&id={{ object.id }}">
+                                                        <i class="fa-solid fa-eye"></i> Ver
+                                                    </a>
+                                                </li>
+                                            </ul>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+		</div>
+	</div>
+
+{% endblock %}

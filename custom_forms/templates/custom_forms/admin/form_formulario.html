@@ -1,0 +1,79 @@
+{% extends 'core/forms/formAdmin.html' %}
+
+{% load static %}
+
+{% block form_suffix %}
+    <hr class="divisor">    
+
+    <input type="hidden" id="id_schema" name="schema" value="{{ form.instance.schema|default_if_none:'' }}">
+
+    <div id="builder"></div>
+
+    {{ object.json|json_script:"form-schema" }}
+{% endblock %}
+
+{% block extracss %}
+    {{ block.super }}
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/formiojs@latest/dist/formio.full.min.css">
+
+    <style>
+        .divisor {
+            border-top: 4px solid;
+            color: #0d6efd;
+        }
+    </style>   
+{% endblock %}
+
+{% block extrajs %}
+    {{ block.super }}
+    <script src="https://cdn.jsdelivr.net/npm/formiojs@latest/dist/formio.full.min.js"></script>
+    <script>
+        let existingSchema = {};
+        const schemaTag = document.getElementById('form-schema');
+        
+        if (schemaTag) {
+            try {
+                existingSchema = JSON.parse(schemaTag.textContent);
+                if (existingSchema && existingSchema.components) {
+                    console.log('Schema existente:', existingSchema);
+                    document.getElementById('id_schema').value = JSON.stringify(existingSchema);
+                } else {
+                    console.log('No hay componentes, iniciando formulario vacío.');
+                    existingSchema = {};
+                }
+            } catch (e) {
+                console.warn('Error al parsear el esquema existente:', e);
+                existingSchema = {};
+            }
+        } else {
+            console.log('No se encontró etiqueta de esquema, iniciando vacío.');
+        }
+
+        Formio.builder(document.getElementById('builder'), existingSchema, {
+          language: 'es',
+          i18n: {
+            es: {
+              'Basic Components': 'Componentes Básicos',
+              'Advanced': 'Avanzado',
+              'Data': 'Datos',
+              'Layout': 'Diseño',
+              'Premium': 'Premium',
+              'Submit': 'Enviar',
+              'Cancel': 'Cancelar',
+              'Save': 'Guardar',
+              'Next': 'Siguiente',
+              'Previous': 'Anterior',
+              'Please correct all errors before submitting.': 'Por favor, corrija todos los errores antes de enviar.',
+              // Agrega más traducciones según sea necesario
+            }
+          }
+        }).then(builder => {
+            builder.on('change', () => {
+                console.clear();  // Limpia la consola
+                console.log('Schema actualizado:', builder.schema);
+                document.getElementById('id_schema').value = JSON.stringify(builder.schema);
+            });
+        });
+    </script>
+
+{% endblock %}

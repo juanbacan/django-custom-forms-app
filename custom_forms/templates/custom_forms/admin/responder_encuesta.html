@@ -1,0 +1,129 @@
+{% extends 'layout/base_admin.html' %}
+{% load static %}
+
+{% block content %}
+  
+<div class="row">
+    <div class="col-md-12">
+        {% if informativo %}
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'administracion' %}{{ modulo_activo.url }}">{{ modulo_activo.nombre }}</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'administracion' %}{{ modulo_activo.url }}">{{ object.encuesta.nombre }}</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'administracion' %}{{ modulo_activo.url }}?action=resultados&id={{ object.encuesta.id }}">Resultados</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">{{ object }}</li>
+                </ol>
+            </nav>
+        {% elif submission %}
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'administracion' %}{{ modulo_activo.url }}">{{ modulo_activo.nombre }}</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'administracion' %}{{ modulo_activo.url }}">{{ object.encuesta.nombre }}</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'administracion' %}{{ modulo_activo.url }}?action=resultados&id={{ object.encuesta.id }}">Resultados</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">{{ object }}</li>
+                </ol>
+            </nav>
+        {% else %}
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'administracion' %}{{ modulo_activo.url }}">{{ modulo_activo.nombre }}</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Responder {{ modulo_activo.nombre }}</li>
+                </ol>
+            </nav>
+        {% endif %}
+
+        <div class="card border-0">
+            <div class="card-body">
+                <h2>{{ encuesta.nombre }}</h2>
+                <p>{{ encuesta.descripcion }}</p>
+
+                <form id="form-render" method="POST" action="{{ rquest.path }}"></form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{ formulario.json|json_script:"form-schema" }}
+{{ submission|default:'{}'|json_script:"form-submission" }}
+
+{% endblock %}
+
+
+{% block extracss %}
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/formiojs@latest/dist/formio.full.min.css">
+    <style>
+
+    </style>
+{% endblock %}
+
+{% block extrajs %}
+    <script src="https://cdn.jsdelivr.net/npm/formiojs@latest/dist/formio.full.min.js"></script>
+    <script>
+        const existingSchema = JSON.parse(document.getElementById('form-schema').textContent);
+        const submissionData = JSON.parse(document.getElementById('form-submission').textContent);
+
+
+        Formio.createForm(document.getElementById('form-render'), existingSchema, {
+            {% if informativo %}
+                readOnly: true,
+            {% endif %}
+        }).then(form => {
+            // Si hay una respuesta previa, precargarla
+            if (submissionData && Object.keys(submissionData).length > 0) {
+                form.setSubmission({ data: submissionData });
+            }
+
+            form.on('submit', function(submission) {
+                const data = submission.data;
+                const realForm = document.getElementById('form-render');
+                // Si ya hay un campo 'respuestas', elimínalo (por si el usuario vuelve a enviar)
+                const oldInput = realForm.querySelector('input[name="respuestas"]');
+                if (oldInput) {
+                    oldInput.remove();
+                }
+
+                // Crear input hidden con todas las respuestas como JSON
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'respuestas';
+                input.value = JSON.stringify(data);
+                realForm.appendChild(input);
+
+                // Agregar el csrf_token
+                const csrfInput = document.createElement('input');
+                csrfInput.type = 'hidden';
+                csrfInput.name = 'csrfmiddlewaretoken';
+                csrfInput.value = '{{ csrf_token }}';
+                realForm.appendChild(csrfInput);
+                
+                // Agregar el action
+                const actionInput = document.createElement('input');
+                actionInput.type = 'hidden';
+                actionInput.name = 'action';
+                actionInput.value = '{{ action }}';
+                realForm.appendChild(actionInput);
+                // Agregar el id de la encuesta
+                const encuestaIdInput = document.createElement('input');
+                encuestaIdInput.type = 'hidden';
+                encuestaIdInput.name = 'id';
+                encuestaIdInput.value = '{{ encuesta.id }}';
+                realForm.appendChild(encuestaIdInput);
+
+                {% if submission %}
+                    const respuestaIdInput = document.createElement('input');
+                    respuestaIdInput.type = 'hidden';
+                    respuestaIdInput.name = 'id_respuesta';
+                    respuestaIdInput.value = '{{ object.id }}';
+                    realForm.appendChild(respuestaIdInput);
+                {% endif %}
+
+                // Enviar el formulario
+                submitModalForm1('form-render')
+
+            });
+        }).catch(function(err) {
+            console.error('Error al crear el formulario:', err);
+        });
+    </script>
+{% endblock %}
+

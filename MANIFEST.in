@@ -1,0 +1,2 @@
+recursive-include custom_forms/templates *
+recursive-include custom_forms/static *
