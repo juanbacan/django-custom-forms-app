@@ -28,6 +28,7 @@
     {{ block.super }}
     <script src="https://cdn.jsdelivr.net/npm/formiojs@latest/dist/formio.full.min.js"></script>
     <script>
+        window.$jqSafe = $.noConflict(true);
         let existingSchema = {};
         const schemaTag = document.getElementById('form-schema');
         
