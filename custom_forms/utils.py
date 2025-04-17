@@ -171,10 +171,10 @@ def sincronizar_campos_definidos(formulario, schema):
             campo.save()
 
 
-
 def guardar_o_actualizar_campos_respuesta(respuesta, respuestas):
     campos_definidos = CampoDefinido.objects.filter(formulario=respuesta.encuesta.formulario)
     campos_dict = {c.clave: c for c in campos_definidos}
+    claves_definidas = set(campos_dict.keys())
 
     campos_existentes = {
         c.clave: c for c in respuesta.campos.all()
@@ -183,15 +183,12 @@ def guardar_o_actualizar_campos_respuesta(respuesta, respuestas):
     errores = {}
 
     for clave, valor in respuestas.items():
-        if clave.startswith("submit"):
+        # Omitir campos no definidos y botones
+        if clave not in claves_definidas:
             continue
 
         valor_str = json.dumps(valor) if isinstance(valor, (dict, list)) else str(valor).strip()
-        campo_definido = campos_dict.get(clave)
-
-        if not campo_definido:
-            errores[clave] = "Campo no definido en el formulario"
-            continue
+        campo_definido = campos_dict[clave]
 
         # Si el campo ya existe, lo usamos; si no, lo creamos
         campo = campos_existentes.get(clave, CampoRespuesta(respuesta=respuesta, clave=clave))
@@ -230,8 +227,7 @@ def guardar_o_actualizar_campos_respuesta(respuesta, respuestas):
                 else:
                     campo.valor_lista = [valor]
 
-            # Otros tipos: texto, email... solo se guarda valor
-
+            # Guardar finalmente
             campo.save()
 
         except Exception as e:
