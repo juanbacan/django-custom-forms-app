@@ -30,9 +30,9 @@
                                 <th>Usuario</th>
                                 <th>Fecha</th>
                                 {% if resultados %}
-                                    {% for clave in resultados.0.campos.keys %}
+                                    {% comment %} {% for clave in resultados.0.campos.keys %}
                                         <th>{{ clave|capfirst }}</th>
-                                    {% endfor %}
+                                    {% endfor %} {% endcomment %}
                                 {% endif %}
                                 <th>Acciones</th>
                             </tr>
@@ -42,9 +42,9 @@
                                 <tr>
                                     <td></td>
                                     <td>{{ fila.fecha|date:"Y-m-d H:i" }}</td>
-                                    {% for valor in fila.campos.values %}
+                                    {% comment %} {% for valor in fila.campos.values %}
                                         <td>{{ valor }}</td>
-                                    {% endfor %}
+                                    {% endfor %} {% endcomment %}
                                     <td>
                                         <div class="dropdown">
                                             <button class="btn btn-info btn-xs dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
