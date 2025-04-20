@@ -2,11 +2,11 @@ from setuptools import setup, find_packages
 
 setup(
     name="django-custom-forms-app",  # Nombre que tendrá en PyPI
-    version="0.0.7",
+    version="0.0.8",
     packages=find_packages(),
     include_package_data=True,
     install_requires=[
-        "Django>=2.2",  
+        "Django>=3.1",  
     ],
     author="juanbacan",
     author_email="juan.ingaor@gmail.com",

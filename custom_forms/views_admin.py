@@ -8,7 +8,7 @@ from django.db.models import Q
 from core.views import ViewAdministracionBase
 from core.utils import error_json, success_json, get_redirect_url
 
-from .utils import crear_campos_definidos_desde_schema, guardar_o_actualizar_campos_respuesta, sincronizar_campos_definidos
+from .utils import guardar_o_actualizar_campos_respuesta
 
 from .models import Formulario, Encuesta, RespuestaEncuesta, FormularioVersion
 from .forms import FormularioForm, EncuestaForm
@@ -36,8 +36,6 @@ class FormularioAdminView(ViewAdministracionBase):
             object.json = schema
             object.save()
 
-            crear_campos_definidos_desde_schema(object, schema)
-
             messages.success(request, "Formulario creado exitosamente")
             return success_json(mensaje="Formulario creado exitosamente", url=get_redirect_url(request, object))
         else:
@@ -60,12 +58,7 @@ class FormularioAdminView(ViewAdministracionBase):
             object.json = schema
             object.save()
 
-            se_actualizo_version = object.guardar_nueva_version()
-            sincronizar_campos_definidos(object, schema)
-
             mensaje = "Formulario editado exitosamente"
-            if se_actualizo_version:
-                mensaje += " y se guardó una nueva versión"
 
             messages.success(request, mensaje)
             return success_json(mensaje=mensaje, url=get_redirect_url(request, object))
@@ -107,6 +100,12 @@ class FormularioAdminView(ViewAdministracionBase):
         object = FormularioVersion.objects.get(pk=self.data.get('id', None))
         context['object'] = object
         return render(request, 'custom_forms/admin/ver_version.html', context)
+    
+    def get_generar_modelo_django(self, request, context, *args, **kwargs):
+        object = Formulario.objects.get(pk=self.data.get('id', None))
+        context['object'] = object
+        context['modelo_code'] = object.generar_modelo_django()
+        return render(request, 'custom_forms/admin/generar_modelo.html', context)
 
     def get_delete(self, request, context, *args, **kwargs):
         id = self.data.get('id', None)
