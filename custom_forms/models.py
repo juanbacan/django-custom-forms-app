@@ -3,11 +3,11 @@ import json
 from django.db import models
 from django.contrib.auth.models import Group
 
-from core.models import CustomUser
+from core.models import CustomUser, ModeloBase
 from django.db import models
 
 
-class Formulario(models.Model):
+class Formulario(ModeloBase):
     nombre = models.CharField(max_length=255)
     json = models.JSONField()
     fecha = models.DateTimeField(auto_now_add=True)
@@ -15,40 +15,6 @@ class Formulario(models.Model):
 
     def __str__(self):
         return self.nombre
-
-
-    def guardar_nueva_version(self):
-        from .utils import normalizar_json
-
-        schema_actual = normalizar_json(self.json)
-
-        ultima = FormularioVersion.objects.filter(formulario=self).order_by('-numero').first()
-        schema_ultimo = normalizar_json(ultima.json) if ultima else None
-
-        if schema_actual == schema_ultimo:
-            return False
-
-        tiene_respuestas = RespuestaEncuesta.objects.filter(
-            encuesta__formulario=self,
-            version=self.version
-        ).exists()
-
-        if not tiene_respuestas:
-            if ultima:
-                ultima.json = self.json
-                ultima.save()
-            return False
-
-        nueva_version = self.version + 1
-        FormularioVersion.objects.create(
-            formulario=self,
-            numero=nueva_version,
-            json=self.json
-        )
-        self.version = nueva_version
-        # ⛔ aquí evitas volver a llamar save con sincronización
-        self.save(update_fields=['version'], sync_labels=False)
-        return True
 
     def generar_modelo_django(self):
         from .utils import camel_to_snake
@@ -75,7 +41,7 @@ class Formulario(models.Model):
         for campo in campos:
             name     = camel_to_snake(campo.clave)
             label    = campo.etiqueta.replace("'", "\\'")
-            required = bool(campo.validate.get("required", False))
+            required = campo.validate.get("required", False) and not campo.conditional
 
             # blank/null si NO es requerido
             null_blank = ""
@@ -95,7 +61,11 @@ class Formulario(models.Model):
                     f"verbose_name='{label}'{null_blank})"
                 )
             else:
-                td = tipo_map.get(campo.tipo, "models.TextField()")
+                # Usa TextField si el tipo original indica área de texto
+                if campo.tipo_original == "textfield":
+                    td = tipo_map.get(campo.tipo, "models.TextField()")
+                else:
+                    td = "models.TextField()"
                 if td.endswith("()"):
                     # ej: FloatField()
                     base = td[:-2]
@@ -110,28 +80,14 @@ class Formulario(models.Model):
         return "\n".join(lines)
 
 
-
     def save(self, *args, **kwargs):
-        from .utils import normalizar_json, sincronizar_campos_definidos, actualizar_etiquetas_respuestas
-        is_new = self.pk is None
-
-        json_original = None
-        if not is_new:
-            json_original = normalizar_json(Formulario.objects.get(pk=self.pk).json)
-
+        from .utils import sincronizar_campos_definidos, actualizar_etiquetas_respuestas
         super().save(*args, **kwargs)
-
-        # Evitar sincronización si no hay cambios
-        json_nuevo = normalizar_json(self.json)
-        if json_nuevo == json_original:
-            return
-
-        # El schema cambió, sincronizamos campos y respuestas:
         sincronizar_campos_definidos(self, self.json)
         actualizar_etiquetas_respuestas(self)
 
 
-class FormularioVersion(models.Model):
+class FormularioVersion(ModeloBase):
     formulario = models.ForeignKey('Formulario', on_delete=models.CASCADE, related_name='versiones')
     numero = models.PositiveIntegerField()
     json = models.JSONField()
@@ -144,7 +100,7 @@ class FormularioVersion(models.Model):
     def __str__(self):
         return f"{self.formulario.nombre} - v{self.numero}"
     
-class CampoDefinido(models.Model):
+class CampoDefinido(ModeloBase):
     formulario = models.ForeignKey(Formulario, on_delete=models.CASCADE)
     clave = models.CharField(max_length=100)
     etiqueta = models.CharField(max_length=255)
@@ -162,7 +118,7 @@ class CampoDefinido(models.Model):
         return f"{self.etiqueta} ({self.clave})"
 
 
-class Encuesta(models.Model):
+class Encuesta(ModeloBase):
     formulario = models.ForeignKey(Formulario, on_delete=models.CASCADE)
     nombre = models.CharField(max_length=255)
     descripcion = models.TextField(blank=True)
@@ -176,7 +132,7 @@ class Encuesta(models.Model):
         return self.nombre
 
 
-class RespuestaEncuesta(models.Model):
+class RespuestaEncuesta(ModeloBase):
     encuesta = models.ForeignKey(Encuesta, on_delete=models.CASCADE)
     usuario = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True, blank=True)
     version = models.PositiveIntegerField()
@@ -186,7 +142,7 @@ class RespuestaEncuesta(models.Model):
         return f"Respuesta de {self.usuario}"
 
 
-class CampoRespuesta(models.Model):
+class CampoRespuesta(ModeloBase):
     respuesta = models.ForeignKey(RespuestaEncuesta, on_delete=models.CASCADE, related_name='campos')
     clave = models.CharField(max_length=100)
     etiqueta = models.CharField(max_length=255, blank=True)

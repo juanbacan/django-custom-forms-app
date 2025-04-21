@@ -6,7 +6,7 @@ from .models import *
 class CampoDefinidoInline(admin.TabularInline):
     model = CampoDefinido
     extra = 1
-    fields = ('etiqueta', 'tipo', 'default_value', 'values', 'validate', 'conditional', 'validate_when_hidden', 'visible_para', 'activo')
+    fields = ('etiqueta', 'tipo', 'tipo_original', 'default_value', 'values', 'validate', 'conditional', 'validate_when_hidden', 'visible_para', 'activo')
     readonly_fields = ('clave', 'etiqueta', 'tipo', 'tipo_original')
     autocomplete_fields = ['visible_para']
     show_change_link = True

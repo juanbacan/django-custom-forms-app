@@ -8,7 +8,7 @@ from django.db.models import Q
 from core.views import ViewAdministracionBase
 from core.utils import error_json, success_json, get_redirect_url
 
-from .utils import guardar_o_actualizar_campos_respuesta
+from .utils import guardar_o_actualizar_campos_respuesta, actualizar_formulario_y_guardar_version
 
 from .models import Formulario, Encuesta, RespuestaEncuesta, FormularioVersion
 from .forms import FormularioForm, EncuestaForm
@@ -55,11 +55,9 @@ class FormularioAdminView(ViewAdministracionBase):
             except json.JSONDecodeError:
                 return error_json(mensaje="El esquema no es un JSON válido")
             
-            object.json = schema
-            object.save()
+            actualizar_formulario_y_guardar_version(object, schema)
 
             mensaje = "Formulario editado exitosamente"
-
             messages.success(request, mensaje)
             return success_json(mensaje=mensaje, url=get_redirect_url(request, object))
         else:

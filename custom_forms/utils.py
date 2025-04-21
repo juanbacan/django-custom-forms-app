@@ -1,9 +1,12 @@
 import json, re
 
 from django.contrib.auth.models import Group
+from django.db import models
+from django.core.exceptions import ValidationError
+
 from datetime import datetime
 
-from .models import CampoDefinido, CampoRespuesta, RespuestaEncuesta
+from .models import CampoDefinido, CampoRespuesta, RespuestaEncuesta, FormularioVersion
 
 formio_type_to_logical_type = {
     "textfield": "text",
@@ -186,28 +189,33 @@ def guardar_o_actualizar_campos_respuesta(respuesta, respuestas):
     campos_dict = {c.clave: c for c in campos_definidos}
     claves_definidas = set(campos_dict.keys())
 
-    campos_existentes = {
-        c.clave: c for c in respuesta.campos.all()
-    }
-
+    campos_existentes = {c.clave: c for c in respuesta.campos.all()}
     errores = {}
 
     for clave, valor in respuestas.items():
-        # Omitir campos no definidos y botones
+        # Ignorar campos no definidos y botones/form.io internos
         if clave not in claves_definidas:
             continue
 
-        valor_str = json.dumps(valor) if isinstance(valor, (dict, list)) else str(valor).strip()
         campo_definido = campos_dict[clave]
 
-        # Si el campo ya existe, lo usamos; si no, lo creamos
+        # Procesamiento seguro de valor_str
+        if isinstance(valor, (dict, list)):
+            valor_str = json.dumps(valor)
+        elif isinstance(valor, str):
+            valor_str = valor.strip()
+        else:
+            valor_str = str(valor)
+
         campo = campos_existentes.get(clave, CampoRespuesta(respuesta=respuesta, clave=clave))
         campo.valor = valor_str
         campo.etiqueta = campo_definido.etiqueta
 
-        # Limpiar campos tipo
+        # Reset de valores tipados
         campo.valor_numerico = None
         campo.valor_fecha = None
+        campo.valor_time = None
+        campo.valor_datetime = None
         campo.valor_booleano = None
         campo.valor_lista = None
 
@@ -245,15 +253,18 @@ def guardar_o_actualizar_campos_respuesta(respuesta, respuestas):
             elif tipo in ['multi_select', 'selectboxes', 'checkboxes']:
                 if isinstance(valor, list):
                     campo.valor_lista = valor
+                elif isinstance(valor, str) and ',' in valor:
+                    campo.valor_lista = [v.strip() for v in valor.split(',')]
                 else:
                     campo.valor_lista = [valor]
 
             campo.save()
 
         except Exception as e:
-            errores[clave] = f"Error en tipo {tipo}: {str(e)}"
+            errores[clave] = f"Error en tipo {tipo} con valor '{valor}': {str(e)}"
 
     return errores
+
 
 
 def normalizar_json(schema):
@@ -275,7 +286,7 @@ def camel_to_snake(name: str) -> str:
 
 def actualizar_etiquetas_respuestas(formulario):
     """
-    Recorre todas las respuestas del formulario y actualiza las etiquetas (y claves si deseas)
+    Recorre todas las respuestas del formulario y actualiza las etiquetas y claves
     en los campos de respuesta según la definición actual de CampoDefinido.
     """
     campos_definidos = CampoDefinido.objects.filter(formulario=formulario)
@@ -292,36 +303,132 @@ def actualizar_etiquetas_respuestas(formulario):
 
 
 
+def condicion_cumplida(campo_definido, campos_respuesta):
+    cond = campo_definido.conditional
+    if not cond or not isinstance(cond, dict):
+        return True  # Si no hay condición, el campo es visible
+
+    when = cond.get("when")
+    eq = cond.get("eq")
+    neq = cond.get("neq")
+    show = cond.get("show", True)
+
+    campo_referencia = campos_respuesta.get(when)
+    if not campo_referencia:
+        return not show  # Si no se respondió el campo base, asumimos lo contrario a show
+
+    # Normalizamos el valor del campo de referencia
+    valor = (
+        campo_referencia.valor_booleano if campo_referencia.valor_booleano is not None
+        else campo_referencia.valor
+    )
+    valor_str = str(valor).strip().lower()
+
+    # Evaluación de igualdad
+    cumple_eq = True
+    if eq is not None:
+        if isinstance(eq, list):
+            comparadores = [str(e).strip().lower() for e in eq]
+            cumple_eq = valor_str in comparadores
+        else:
+            cumple_eq = valor_str == str(eq).strip().lower()
+
+    # Evaluación de desigualdad
+    cumple_neq = True
+    if neq is not None:
+        if isinstance(neq, list):
+            comparadores = [str(e).strip().lower() for e in neq]
+            cumple_neq = valor_str not in comparadores
+        else:
+            cumple_neq = valor_str != str(neq).strip().lower()
+
+    cumple = cumple_eq and cumple_neq
+
+    return cumple if show else not cumple
+
+
+def es_valor_vacio(valor):
+    if isinstance(valor, str):
+        valor = valor.strip().lower()
+    return valor in [None, '', 'null']
+
+
+def validar_campos_requeridos(campos_definidos, campos_respuesta):
+    """
+    Retorna una lista de etiquetas de campos requeridos que están vacíos
+    y cuya condición (conditional) se cumple.
+    """
+    faltantes = []
+
+    for campo_def in campos_definidos:
+        if not campo_def.validate.get("required", False):
+            continue  # No es requerido
+
+        if not condicion_cumplida(campo_def, campos_respuesta):
+            continue  # No se muestra, no se valida
+
+        campo_resp = campos_respuesta.get(campo_def.clave)
+        if not campo_resp or es_valor_vacio(campo_resp.valor):
+            faltantes.append(campo_def.etiqueta)
+
+    return faltantes
+
+
 def guardar_respuesta_en_modelo_desde_respuesta(
     respuesta_obj,
     modelo_class,
     instancia=None,
-    extras=None
+    extras=None,
+    validar=False
 ):
-    """
-    Toma una RespuestaEncuesta y vuelca sus CampoRespuesta en una instancia
-    de modelo_class, mapeando CamelCase->snake_case automáticamente.
-    """
+    campos_respuesta = {c.clave: c for c in respuesta_obj.campos.all()}
+    campos_definidos = CampoDefinido.objects.filter(formulario=respuesta_obj.encuesta.formulario, activo=True)
+
+    campos_condicionales_visibles_no_respondidos = []
+
+    crear_modelo = False
+    for campo_def in campos_definidos:
+        if condicion_cumplida(campo_def, campos_respuesta):
+            campo_resp = campos_respuesta.get(campo_def.clave)
+            if campo_resp and not es_valor_vacio(campo_resp.valor):
+                crear_modelo = True
+                break
+            else:
+                campos_condicionales_visibles_no_respondidos.append(campo_def.etiqueta)
+
+    if not crear_modelo:
+        mensaje = (
+            "No se puede guardar el modelo porque ningún campo relevante fue respondido. "
+            "Se esperaban respuestas en: " +
+            ", ".join(campos_condicionales_visibles_no_respondidos)
+        )
+        raise ValueError(mensaje)
+
+    # Validación de campos requeridos condicionales
+    campos_faltantes = validar_campos_requeridos(campos_definidos, campos_respuesta)
+    if campos_faltantes:
+        raise ValueError("No se puede guardar el modelo porque faltan campos obligatorios: " + ", ".join(campos_faltantes))
+
+    # Crear o usar instancia del modelo
     obj = instancia or modelo_class()
+
     if extras:
         for k, v in extras.items():
             setattr(obj, k, v)
 
-    # Prepara mapa de fields del modelo destino
     fields = {
         f.name: f
         for f in modelo_class._meta.get_fields()
-        if isinstance(f, models.Field)
+        if isinstance(f, models.Field) and not f.auto_created
     }
 
     for campo_resp in respuesta_obj.campos.all():
-        raw_key = campo_resp.clave  # ej. "TipoDeDispositivoMedicoDeUsoHumano"
-        attr = camel_to_snake(raw_key)  # => "tipo_de_dispositivo_medico_de_uso_humano"
+        raw_key = campo_resp.clave
+        attr = camel_to_snake(raw_key)
+
         if attr not in fields:
             continue
 
-        field = fields[attr]
-        # Escoge el valor tipado
         if campo_resp.valor_datetime is not None:
             valor = campo_resp.valor_datetime
         elif campo_resp.valor_fecha is not None:
@@ -340,8 +447,68 @@ def guardar_respuesta_en_modelo_desde_respuesta(
             except Exception:
                 valor = campo_resp.valor
 
-        # Asigna directamente (tipos ya correctos)
-        setattr(obj, attr, valor)
+        try:
+            setattr(obj, attr, valor)
+        except (ValueError, TypeError):
+            continue
+
+    if validar:
+        try:
+            obj.full_clean()
+        except ValidationError as e:
+            raise ValueError(f"Error al validar el modelo: {e.message_dict}")
 
     obj.save()
     return obj
+
+
+
+def actualizar_formulario_y_guardar_version(formulario, nuevo_json: dict) -> bool:
+    """
+    Actualiza el JSON de un formulario y guarda una nueva versión
+    solo si ya existen respuestas y el esquema cambió.
+    Retorna True si se creó una nueva versión, False si no fue necesario.
+    """
+    from .utils import normalizar_json
+
+    schema_nuevo = normalizar_json(nuevo_json)
+    schema_actual = normalizar_json(formulario.json)
+
+    # Si no hay cambios en el JSON, no hacemos nada
+    if schema_nuevo == schema_actual:
+        return False
+
+    # Guardamos el nuevo JSON
+    formulario.json = nuevo_json
+    formulario.save()
+
+    ultima = FormularioVersion.objects.filter(formulario=formulario).order_by('-numero').first()
+    schema_ultimo = normalizar_json(ultima.json) if ultima else None
+
+    # Si es igual al último esquema guardado, no hace falta crear una nueva versión
+    if schema_nuevo == schema_ultimo:
+        return False
+
+    # Verifica si existen respuestas que ya usan la versión actual
+    tiene_respuestas = RespuestaEncuesta.objects.filter(
+        encuesta__formulario=formulario,
+        version=formulario.version
+    ).exists()
+
+    if not tiene_respuestas:
+        # Solo actualiza la última versión
+        if ultima:
+            ultima.json = nuevo_json
+            ultima.save()
+        return False
+
+    # Si hay respuestas, crea una nueva versión
+    nueva_version = formulario.version + 1
+    FormularioVersion.objects.create(
+        formulario=formulario,
+        numero=nueva_version,
+        json=nuevo_json
+    )
+    formulario.version = nueva_version
+    formulario.save(update_fields=['version'])
+    return True
