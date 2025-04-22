@@ -30,6 +30,7 @@ class Formulario(ModeloBase):
             "datetime":     "models.DateTimeField()",
             "boolean":      "models.BooleanField()",
             "multi_select": "models.JSONField()",
+            "datagrid":     "models.JSONField()",
         }
 
         lines = [

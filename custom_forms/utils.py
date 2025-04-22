@@ -29,6 +29,9 @@ formio_type_to_logical_type = {
     "signature": "signature",
     "survey": "survey",
     "custom": "custom",
+
+    "datagrid": "datagrid",
+    "editgrid": "datagrid", 
     # Layouts y decorativos se omiten en el procesamiento
     "button": None,
     "content": None,
@@ -71,25 +74,48 @@ def extraer_componentes(schema):
                         procesar_componentes(cell.get('components', []))
                 continue
 
-            # Rejillas de datos
             if tipo in ['datagrid', 'editgrid']:
-                values = comp.get('values') or comp.get('data', {}).get('values', [])
-                validate  = comp.get('validate', {})
-                validate_when_hidden = comp.get('validateWhenHidden', False)
-                conditional = comp.get('conditional', {})
-                default_value = comp.get('defaultValue', None)
+                subfields = []
+                for subcomp in comp.get('components', []):
+                    subfields.append({
+                        'key': subcomp.get('key'),
+                        'label': subcomp.get('label', subcomp.get('key')),
+                        'type': subcomp.get('type'),
+                        'validate': subcomp.get('validate', {}),
+                        'defaultValue': subcomp.get('defaultValue'),
+                    })
+
                 campos.append({
                     'key': comp.get('key'),
                     'label': comp.get('label', comp.get('key')),
                     'type': tipo,
-                    'values': values,
-                    'validate': validate,
-                    'validate_when_hidden': validate_when_hidden,
-                    'conditional': conditional,
-                    'defaultValue': default_value,
+                    'values': subfields,  # Aquí se guarda la estructura interna
+                    'validate': comp.get('validate', {}),
+                    'validateWhenHidden': comp.get('validateWhenHidden', False),
+                    'conditional': comp.get('conditional', {}),
+                    'defaultValue': comp.get('defaultValue', None),
                 })
-                procesar_componentes(comp.get('components', []))
                 continue
+
+            # # Rejillas de datos
+            # if tipo in ['datagrid', 'editgrid']:
+            #     values = comp.get('values') or comp.get('data', {}).get('values', [])
+            #     validate  = comp.get('validate', {})
+            #     validate_when_hidden = comp.get('validateWhenHidden', False)
+            #     conditional = comp.get('conditional', {})
+            #     default_value = comp.get('defaultValue', None)
+            #     campos.append({
+            #         'key': comp.get('key'),
+            #         'label': comp.get('label', comp.get('key')),
+            #         'type': tipo,
+            #         'values': values,
+            #         'validate': validate,
+            #         'validate_when_hidden': validate_when_hidden,
+            #         'conditional': conditional,
+            #         'defaultValue': default_value,
+            #     })
+            #     procesar_componentes(comp.get('components', []))
+            #     continue
 
             # Elementos no input (decorativos, botones)
             if tipo in ['content', 'htmlelement', 'button']:
@@ -374,6 +400,58 @@ def validar_campos_requeridos(campos_definidos, campos_respuesta):
     return faltantes
 
 
+def validar_datagrid(campo_definido, campo_respuesta):
+    """
+    Valida cada fila del datagrid según los subcampos definidos en `values`.
+    Devuelve una lista de mensajes de error si faltan campos requeridos.
+    """
+    errores = []
+    columnas = campo_definido.values or []
+    filas = campo_respuesta.valor_lista or []
+
+    for i, fila in enumerate(filas):
+        for col in columnas:
+            if col.get('validate', {}).get('required'):
+                key = col['key']
+                label = col.get('label', key)
+                valor = fila.get(key)
+
+                if es_valor_vacio(valor):
+                    errores.append(
+                        f"Fila {i + 1} de '{campo_definido.etiqueta}': falta el campo obligatorio '{label}'"
+                    )
+    return errores
+
+
+def validar_campos_requeridos(campos_definidos, campos_respuesta):
+    """
+    Retorna una lista de mensajes de error por campos requeridos no respondidos,
+    incluyendo datagrids.
+    """
+    faltantes = []
+
+    for campo_def in campos_definidos:
+        if not campo_def.validate.get("required", False):
+            continue  # No es requerido
+
+        if not condicion_cumplida(campo_def, campos_respuesta):
+            continue  # No se muestra, no se valida
+
+        campo_resp = campos_respuesta.get(campo_def.clave)
+
+        if campo_def.tipo == 'datagrid':
+            if not campo_resp:
+                faltantes.append(f"'{campo_def.etiqueta}' no fue respondido")
+                continue
+            faltantes.extend(validar_datagrid(campo_def, campo_resp))
+            continue
+
+        if not campo_resp or es_valor_vacio(campo_resp.valor):
+            faltantes.append(f"Campo obligatorio no respondido: '{campo_def.etiqueta}'")
+
+    return faltantes
+
+
 def guardar_respuesta_en_modelo_desde_respuesta(
     respuesta_obj,
     modelo_class,
@@ -512,3 +590,4 @@ def actualizar_formulario_y_guardar_version(formulario, nuevo_json: dict) -> boo
     formulario.version = nueva_version
     formulario.save(update_fields=['version'])
     return True
+
