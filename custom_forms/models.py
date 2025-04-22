@@ -8,7 +8,7 @@ from django.db import models
 
 
 class Formulario(ModeloBase):
-    nombre = models.CharField(max_length=255)
+    nombre = models.CharField(max_length=1024)
     json = models.JSONField()
     fecha = models.DateTimeField(auto_now_add=True)
     version = models.PositiveIntegerField(default=1)
@@ -23,13 +23,14 @@ class Formulario(ModeloBase):
         model_name = f"Formulario{self.pk:04}"
 
         tipo_map = {
-            "text":         "models.CharField(max_length=255)",
+            "text":         "models.CharField(max_length=1024)",
             "number":       "models.FloatField()",
             "date":         "models.DateField()",
             "time":         "models.TimeField()",
             "datetime":     "models.DateTimeField()",
             "boolean":      "models.BooleanField()",
             "multi_select": "models.JSONField()",
+            "datagrid":     "models.JSONField()",
         }
 
         lines = [
@@ -56,7 +57,7 @@ class Formulario(ModeloBase):
                 const = f"{name.upper()}_CHOICES"
                 # asumimos que la constante ya existe en el mismo archivo
                 field = (
-                    f"models.CharField(max_length=255, "
+                    f"models.CharField(max_length=1024, "
                     f"choices={const}, "
                     f"verbose_name='{label}'{null_blank})"
                 )
@@ -71,7 +72,7 @@ class Formulario(ModeloBase):
                     base = td[:-2]
                     field = f"{base}(verbose_name='{label}'{null_blank})"
                 else:
-                    # ej: CharField(max_length=255)
+                    # ej: CharField(max_length=1024)
                     base = td[:-1]
                     field = f"{base}, verbose_name='{label}'{null_blank})"
 
@@ -79,13 +80,16 @@ class Formulario(ModeloBase):
 
         return "\n".join(lines)
 
+    def campos_tabla(self):
+        """
+        Devuelve una lista de los campos que deben mostrarse en la tabla de respuestas.
+        """
+        return CampoDefinido.objects.filter(formulario=self, table_view=True, activo=True)
 
     def save(self, *args, **kwargs):
-        from .utils import sincronizar_campos_definidos, actualizar_etiquetas_respuestas
+        from .utils import sincronizar_campos_definidos
         super().save(*args, **kwargs)
         sincronizar_campos_definidos(self, self.json)
-        actualizar_etiquetas_respuestas(self)
-
 
 class FormularioVersion(ModeloBase):
     formulario = models.ForeignKey('Formulario', on_delete=models.CASCADE, related_name='versiones')
@@ -103,14 +107,15 @@ class FormularioVersion(ModeloBase):
 class CampoDefinido(ModeloBase):
     formulario = models.ForeignKey(Formulario, on_delete=models.CASCADE)
     clave = models.CharField(max_length=100)
-    etiqueta = models.CharField(max_length=255)
+    etiqueta = models.CharField(max_length=1024)
     tipo = models.CharField(max_length=20)  # text, number, date, time, etc.
     tipo_original = models.CharField(max_length=50)
     values = models.JSONField(null=True, blank=True)
     validate = models.JSONField(null=True, blank=True)
     conditional = models.JSONField(null=True, blank=True)
     validate_when_hidden = models.BooleanField(default=False)
-    default_value = models.CharField(null=True, blank=True, max_length=255)
+    default_value = models.CharField(null=True, blank=True, max_length=1024)
+    table_view = models.BooleanField(default=False)
     visible_para = models.ManyToManyField(Group, blank=True)
     activo = models.BooleanField(default=True)
 
@@ -120,7 +125,7 @@ class CampoDefinido(ModeloBase):
 
 class Encuesta(ModeloBase):
     formulario = models.ForeignKey(Formulario, on_delete=models.CASCADE)
-    nombre = models.CharField(max_length=255)
+    nombre = models.CharField(max_length=1024)
     descripcion = models.TextField(blank=True)
     activa = models.BooleanField(default=True)
     fecha_inicio = models.DateField(null=True, blank=True)
@@ -144,8 +149,10 @@ class RespuestaEncuesta(ModeloBase):
 
 class CampoRespuesta(ModeloBase):
     respuesta = models.ForeignKey(RespuestaEncuesta, on_delete=models.CASCADE, related_name='campos')
+    campo_definido = models.ForeignKey(CampoDefinido, on_delete=models.CASCADE)
+
     clave = models.CharField(max_length=100)
-    etiqueta = models.CharField(max_length=255, blank=True)
+    etiqueta = models.CharField(max_length=1024, blank=True)
     valor = models.TextField() # Valor original como texto/JSON
     
     valor_numerico = models.FloatField(null=True, blank=True)

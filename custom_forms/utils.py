@@ -29,6 +29,9 @@ formio_type_to_logical_type = {
     "signature": "signature",
     "survey": "survey",
     "custom": "custom",
+
+    "datagrid": "datagrid",
+    "editgrid": "datagrid", 
     # Layouts y decorativos se omiten en el procesamiento
     "button": None,
     "content": None,
@@ -71,24 +74,28 @@ def extraer_componentes(schema):
                         procesar_componentes(cell.get('components', []))
                 continue
 
-            # Rejillas de datos
             if tipo in ['datagrid', 'editgrid']:
-                values = comp.get('values') or comp.get('data', {}).get('values', [])
-                validate  = comp.get('validate', {})
-                validate_when_hidden = comp.get('validateWhenHidden', False)
-                conditional = comp.get('conditional', {})
-                default_value = comp.get('defaultValue', None)
+                subfields = []
+                for subcomp in comp.get('components', []):
+                    subfields.append({
+                        'key': subcomp.get('key'),
+                        'label': subcomp.get('label', subcomp.get('key')),
+                        'type': subcomp.get('type'),
+                        'validate': subcomp.get('validate', {}),
+                        'defaultValue': subcomp.get('defaultValue'),
+                    })
+
                 campos.append({
                     'key': comp.get('key'),
                     'label': comp.get('label', comp.get('key')),
                     'type': tipo,
-                    'values': values,
-                    'validate': validate,
-                    'validate_when_hidden': validate_when_hidden,
-                    'conditional': conditional,
-                    'defaultValue': default_value,
+                    'values': subfields,  # Aquí se guarda la estructura interna
+                    'validate': comp.get('validate', {}),
+                    'validateWhenHidden': comp.get('validateWhenHidden', False),
+                    'conditional': comp.get('conditional', {}),
+                    'defaultValue': comp.get('defaultValue', None),
+                    'tableView': comp.get('tableView', False),
                 })
-                procesar_componentes(comp.get('components', []))
                 continue
 
             # Elementos no input (decorativos, botones)
@@ -102,6 +109,7 @@ def extraer_componentes(schema):
                 validate_when_hidden = comp.get('validateWhenHidden', False)
                 conditional = comp.get('conditional', {})
                 default_value = comp.get('defaultValue', None)
+                table_view = comp.get('tableView', False)
 
                 campos.append({
                     'key': comp.get('key'),
@@ -112,6 +120,7 @@ def extraer_componentes(schema):
                     'validateWhenHidden': validate_when_hidden,
                     'conditional': conditional,
                     'defaultValue': default_value,
+                    'tableView': table_view,
                 })
 
     procesar_componentes(schema.get('components', []))
@@ -147,6 +156,7 @@ def sincronizar_campos_definidos(formulario, schema):
         validate_when_hidden = comp.get('validateWhenHidden', False)
         conditional = comp.get('conditional', {})
         default_value = comp.get('defaultValue', None)
+        table_view = comp.get('tableView', False)
 
         if clave in actuales:
             campo = actuales[clave]
@@ -158,6 +168,7 @@ def sincronizar_campos_definidos(formulario, schema):
             campo.validate_when_hidden  = validate_when_hidden
             campo.conditional           = conditional
             campo.default_value         = default_value
+            campo.table_view           = table_view
             campo.activo                = True
             campo.save()
         else:
@@ -172,6 +183,7 @@ def sincronizar_campos_definidos(formulario, schema):
                 validate_when_hidden=validate_when_hidden,
                 conditional=conditional,
                 default_value=default_value,
+                table_view=table_view,
                 activo=True
             )
             if admin_group:
@@ -187,19 +199,20 @@ def sincronizar_campos_definidos(formulario, schema):
 def guardar_o_actualizar_campos_respuesta(respuesta, respuestas):
     campos_definidos = CampoDefinido.objects.filter(formulario=respuesta.encuesta.formulario)
     campos_dict = {c.clave: c for c in campos_definidos}
-    claves_definidas = set(campos_dict.keys())
-
-    campos_existentes = {c.clave: c for c in respuesta.campos.all()}
     errores = {}
 
+    # Relacionar campos existentes con CampoDefinido (usando clave)
+    campos_existentes = {
+        c.campo_definido: c for c in respuesta.campos.select_related('campo_definido').all()
+        if c.campo_definido  # Asegurar que el campo tenga FK asignada
+    }
+
     for clave, valor in respuestas.items():
-        # Ignorar campos no definidos y botones/form.io internos
-        if clave not in claves_definidas:
-            continue
+        campo_definido = campos_dict.get(clave)
+        if not campo_definido:
+            continue  # Ignorar campos no definidos o internos
 
-        campo_definido = campos_dict[clave]
-
-        # Procesamiento seguro de valor_str
+        # Convertir el valor a string seguro
         if isinstance(valor, (dict, list)):
             valor_str = json.dumps(valor)
         elif isinstance(valor, str):
@@ -207,9 +220,14 @@ def guardar_o_actualizar_campos_respuesta(respuesta, respuestas):
         else:
             valor_str = str(valor)
 
-        campo = campos_existentes.get(clave, CampoRespuesta(respuesta=respuesta, clave=clave))
-        campo.valor = valor_str
+        campo = campos_existentes.get(campo_definido, CampoRespuesta(
+            respuesta=respuesta,
+            campo_definido=campo_definido,
+            clave=campo_definido.clave
+        ))
+
         campo.etiqueta = campo_definido.etiqueta
+        campo.valor = valor_str
 
         # Reset de valores tipados
         campo.valor_numerico = None
@@ -242,13 +260,12 @@ def guardar_o_actualizar_campos_respuesta(respuesta, respuestas):
             elif tipo == 'boolean':
                 if isinstance(valor, bool):
                     campo.valor_booleano = valor
-                elif isinstance(valor_str, str):
-                    if valor_str.lower() in ['true', '1', 'sí', 'si']:
-                        campo.valor_booleano = True
-                    elif valor_str.lower() in ['false', '0', 'no']:
-                        campo.valor_booleano = False
-                    else:
-                        raise ValueError(f"Valor booleano inválido: {valor_str}")
+                elif valor_str.lower() in ['true', '1', 'sí', 'si']:
+                    campo.valor_booleano = True
+                elif valor_str.lower() in ['false', '0', 'no']:
+                    campo.valor_booleano = False
+                else:
+                    raise ValueError(f"Valor booleano inválido: {valor_str}")
 
             elif tipo in ['multi_select', 'selectboxes', 'checkboxes']:
                 if isinstance(valor, list):
@@ -264,7 +281,6 @@ def guardar_o_actualizar_campos_respuesta(respuesta, respuestas):
             errores[clave] = f"Error en tipo {tipo} con valor '{valor}': {str(e)}"
 
     return errores
-
 
 
 def normalizar_json(schema):
@@ -284,40 +300,25 @@ def camel_to_snake(name: str) -> str:
     return s2.lower()
 
 
-def actualizar_etiquetas_respuestas(formulario):
-    """
-    Recorre todas las respuestas del formulario y actualiza las etiquetas y claves
-    en los campos de respuesta según la definición actual de CampoDefinido.
-    """
-    campos_definidos = CampoDefinido.objects.filter(formulario=formulario)
-    campos_dict = {c.clave: c.etiqueta for c in campos_definidos}
-
-    respuestas = RespuestaEncuesta.objects.filter(encuesta__formulario=formulario).prefetch_related('campos')
-
-    for respuesta in respuestas:
-        for campo in respuesta.campos.all():
-            nueva_etiqueta = campos_dict.get(campo.clave)
-            if nueva_etiqueta and campo.etiqueta != nueva_etiqueta:
-                campo.etiqueta = nueva_etiqueta
-                campo.save()
-
-
-
 def condicion_cumplida(campo_definido, campos_respuesta):
+    """
+    Determina si la condición del campo está cumplida, basado en los valores de campos_respuesta.
+    campos_respuesta debe ser un dict con claves = CampoDefinido.clave y valores = CampoRespuesta.
+    """
     cond = campo_definido.conditional
     if not cond or not isinstance(cond, dict):
-        return True  # Si no hay condición, el campo es visible
+        return True  # No hay condición → mostrar campo
 
-    when = cond.get("when")
+    when = cond.get("when")  # clave del campo dependiente
     eq = cond.get("eq")
     neq = cond.get("neq")
     show = cond.get("show", True)
 
     campo_referencia = campos_respuesta.get(when)
     if not campo_referencia:
-        return not show  # Si no se respondió el campo base, asumimos lo contrario a show
+        return not show  # No se respondió el campo base → aplicar lógica inversa
 
-    # Normalizamos el valor del campo de referencia
+    # Normalización del valor
     valor = (
         campo_referencia.valor_booleano if campo_referencia.valor_booleano is not None
         else campo_referencia.valor
@@ -327,20 +328,14 @@ def condicion_cumplida(campo_definido, campos_respuesta):
     # Evaluación de igualdad
     cumple_eq = True
     if eq is not None:
-        if isinstance(eq, list):
-            comparadores = [str(e).strip().lower() for e in eq]
-            cumple_eq = valor_str in comparadores
-        else:
-            cumple_eq = valor_str == str(eq).strip().lower()
+        comparadores = [str(e).strip().lower() for e in eq] if isinstance(eq, list) else [str(eq).strip().lower()]
+        cumple_eq = valor_str in comparadores
 
     # Evaluación de desigualdad
     cumple_neq = True
     if neq is not None:
-        if isinstance(neq, list):
-            comparadores = [str(e).strip().lower() for e in neq]
-            cumple_neq = valor_str not in comparadores
-        else:
-            cumple_neq = valor_str != str(neq).strip().lower()
+        comparadores = [str(e).strip().lower() for e in neq] if isinstance(neq, list) else [str(neq).strip().lower()]
+        cumple_neq = valor_str not in comparadores
 
     cumple = cumple_eq and cumple_neq
 
@@ -370,6 +365,58 @@ def validar_campos_requeridos(campos_definidos, campos_respuesta):
         campo_resp = campos_respuesta.get(campo_def.clave)
         if not campo_resp or es_valor_vacio(campo_resp.valor):
             faltantes.append(campo_def.etiqueta)
+
+    return faltantes
+
+
+def validar_datagrid(campo_definido, campo_respuesta):
+    """
+    Valida cada fila del datagrid según los subcampos definidos en `values`.
+    Devuelve una lista de mensajes de error si faltan campos requeridos.
+    """
+    errores = []
+    columnas = campo_definido.values or []
+    filas = campo_respuesta.valor_lista or []
+
+    for i, fila in enumerate(filas):
+        for col in columnas:
+            if col.get('validate', {}).get('required'):
+                key = col['key']
+                label = col.get('label', key)
+                valor = fila.get(key)
+
+                if es_valor_vacio(valor):
+                    errores.append(
+                        f"Fila {i + 1} de '{campo_definido.etiqueta}': falta el campo obligatorio '{label}'"
+                    )
+    return errores
+
+
+def validar_campos_requeridos(campos_definidos, campos_respuesta):
+    """
+    Retorna una lista de mensajes de error por campos requeridos no respondidos,
+    incluyendo datagrids.
+    """
+    faltantes = []
+
+    for campo_def in campos_definidos:
+        if not campo_def.validate.get("required", False):
+            continue  # No es requerido
+
+        if not condicion_cumplida(campo_def, campos_respuesta):
+            continue  # No se muestra, no se valida
+
+        campo_resp = campos_respuesta.get(campo_def.clave)
+
+        if campo_def.tipo == 'datagrid':
+            if not campo_resp:
+                faltantes.append(f"'{campo_def.etiqueta}' no fue respondido")
+                continue
+            faltantes.extend(validar_datagrid(campo_def, campo_resp))
+            continue
+
+        if not campo_resp or es_valor_vacio(campo_resp.valor):
+            faltantes.append(f"Campo obligatorio no respondido: '{campo_def.etiqueta}'")
 
     return faltantes
 
@@ -512,3 +559,4 @@ def actualizar_formulario_y_guardar_version(formulario, nuevo_json: dict) -> boo
     formulario.version = nueva_version
     formulario.save(update_fields=['version'])
     return True
+
