@@ -112,6 +112,7 @@ class CampoDefinido(ModeloBase):
     conditional = models.JSONField(null=True, blank=True)
     validate_when_hidden = models.BooleanField(default=False)
     default_value = models.CharField(null=True, blank=True, max_length=1024)
+    table_view = models.BooleanField(default=False)
     visible_para = models.ManyToManyField(Group, blank=True)
     activo = models.BooleanField(default=True)
 

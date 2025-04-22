@@ -94,28 +94,9 @@ def extraer_componentes(schema):
                     'validateWhenHidden': comp.get('validateWhenHidden', False),
                     'conditional': comp.get('conditional', {}),
                     'defaultValue': comp.get('defaultValue', None),
+                    'tableView': comp.get('tableView', False),
                 })
                 continue
-
-            # # Rejillas de datos
-            # if tipo in ['datagrid', 'editgrid']:
-            #     values = comp.get('values') or comp.get('data', {}).get('values', [])
-            #     validate  = comp.get('validate', {})
-            #     validate_when_hidden = comp.get('validateWhenHidden', False)
-            #     conditional = comp.get('conditional', {})
-            #     default_value = comp.get('defaultValue', None)
-            #     campos.append({
-            #         'key': comp.get('key'),
-            #         'label': comp.get('label', comp.get('key')),
-            #         'type': tipo,
-            #         'values': values,
-            #         'validate': validate,
-            #         'validate_when_hidden': validate_when_hidden,
-            #         'conditional': conditional,
-            #         'defaultValue': default_value,
-            #     })
-            #     procesar_componentes(comp.get('components', []))
-            #     continue
 
             # Elementos no input (decorativos, botones)
             if tipo in ['content', 'htmlelement', 'button']:
@@ -128,6 +109,7 @@ def extraer_componentes(schema):
                 validate_when_hidden = comp.get('validateWhenHidden', False)
                 conditional = comp.get('conditional', {})
                 default_value = comp.get('defaultValue', None)
+                table_view = comp.get('tableView', False)
 
                 campos.append({
                     'key': comp.get('key'),
@@ -138,6 +120,7 @@ def extraer_componentes(schema):
                     'validateWhenHidden': validate_when_hidden,
                     'conditional': conditional,
                     'defaultValue': default_value,
+                    'tableView': table_view,
                 })
 
     procesar_componentes(schema.get('components', []))
@@ -173,6 +156,7 @@ def sincronizar_campos_definidos(formulario, schema):
         validate_when_hidden = comp.get('validateWhenHidden', False)
         conditional = comp.get('conditional', {})
         default_value = comp.get('defaultValue', None)
+        table_view = comp.get('tableView', False)
 
         if clave in actuales:
             campo = actuales[clave]
@@ -184,6 +168,7 @@ def sincronizar_campos_definidos(formulario, schema):
             campo.validate_when_hidden  = validate_when_hidden
             campo.conditional           = conditional
             campo.default_value         = default_value
+            campo.table_view           = table_view
             campo.activo                = True
             campo.save()
         else:
@@ -198,6 +183,7 @@ def sincronizar_campos_definidos(formulario, schema):
                 validate_when_hidden=validate_when_hidden,
                 conditional=conditional,
                 default_value=default_value,
+                table_view=table_view,
                 activo=True
             )
             if admin_group:
